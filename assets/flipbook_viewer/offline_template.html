@@ -23,10 +23,21 @@
     #zoom-wrapper {
       width: 100%;
       height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
       transform-origin: center center;
     }
     #book {
       margin: 0 auto;
+      max-width: 100%;
+      max-height: 100%;
+      background: transparent;
+    }
+    #book .stf__wrapper,
+    #book canvas {
+      background: transparent;
     }
     /* Les images de page s'affichent ENTIÈRES, sans être rognées — même si
        leurs proportions ne correspondent pas exactement au cadre de la
@@ -66,15 +77,18 @@
       // Dimensions internes plus élevées que la taille d'affichage réelle :
       // c'est ce qui donne des pages nettes sur écrans haute densité
       // (Retina...), même en mode Canvas — pas besoin du mode HTML pour ça.
-      width: 800,
-      height: 1131,
+      width: 1200,
+      height: 1697,
       size: 'stretch',
-      minWidth: 400,
+      // Permet au moteur de s'adapter aux écrans étroits sans débordement.
+      minWidth: 1,
       maxWidth: 2400,
-      minHeight: 565,
-      maxHeight: 3393,
+      minHeight: 1,
+      maxHeight: 3394,
       showCover: false,
       maxShadowOpacity: 0.5,
+      // Animation plus lente pour éviter l'effet de changement brusque.
+      flippingTime: 1200,
       mobileScrollSupport: false,
       usePortrait: true,
       clickEventForward: true,
@@ -84,20 +98,68 @@
     // livre, avec une animation fluide (voir index.html pour le détail).
     pageFlip.loadFromImages(pageUrls);
 
-    // ---------- Zones de clic : tape à droite = page suivante, à gauche = page précédente ----------
-    bookEl.addEventListener('click', function (event) {
-      const rect = bookEl.getBoundingClientRect();
-      const clickX = event.clientX - rect.left;
-      if (clickX > rect.width / 2) {
-        pageFlip.flipNext();
-      } else {
-        pageFlip.flipPrev();
+    let currentScale = 1;
+    let panX = 0;
+    let panY = 0;
+    let panStartX = 0;
+    let panStartY = 0;
+    let panOriginX = 0;
+    let panOriginY = 0;
+    let didPan = false;
+    window.flipbookZoomScale = currentScale;
+
+    function applyZoomResolution() {
+      window.flipbookZoomScale = currentScale;
+      window.flipbookNavigationLocked = currentScale > MIN_SCALE;
+      pageFlip.update();
+      const canvas = bookEl.querySelector('canvas');
+      const context = canvas && canvas.getContext('2d');
+      if (context) {
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = 'high';
       }
-    });
+    }
+
+    function applyTransform() {
+      zoomWrapper.style.transform =
+        'translate(' + panX + 'px, ' + panY + 'px) scale(' + currentScale + ')';
+    }
+
+    function constrainPan() {
+      const maxX = Math.max(0, (zoomWrapper.clientWidth * currentScale - zoomWrapper.clientWidth) / 2);
+      const maxY = Math.max(0, (zoomWrapper.clientHeight * currentScale - zoomWrapper.clientHeight) / 2);
+      panX = Math.min(maxX, Math.max(-maxX, panX));
+      panY = Math.min(maxY, Math.max(-maxY, panY));
+    }
+
+    // Attend la stabilisation du layout après une rotation avant de redessiner
+    // le canvas en haute résolution.
+    let resizeFrame = 0;
+    function configureCanvasQuality() {
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const canvas = bookEl.querySelector('canvas');
+          const context = canvas && canvas.getContext('2d');
+          if (!context) return;
+
+          const cssWidth = canvas.clientWidth;
+          const cssHeight = canvas.clientHeight;
+          if (cssWidth <= 0 || cssHeight <= 0) {
+            return;
+          }
+
+          pageFlip.update();
+        });
+      });
+    }
+    configureCanvasQuality();
+    new ResizeObserver(configureCanvasQuality).observe(bookEl);
+    window.addEventListener('resize', configureCanvasQuality);
+    window.addEventListener('orientationchange', configureCanvasQuality);
 
     // ---------- Pincement à deux doigts pour zoomer ----------
     const zoomWrapper = document.getElementById('zoom-wrapper');
-    let currentScale = 1;
     let initialDistance = 0;
     let initialScale = 1;
     const MIN_SCALE = 1;
@@ -111,32 +173,65 @@
 
     document.addEventListener('touchstart', function (event) {
       if (event.touches.length === 2) {
+        window.flipbookZooming = true;
+        event.stopPropagation();
         initialDistance = distanceBetween(event.touches);
         initialScale = currentScale;
+      } else if (event.touches.length === 1 && window.flipbookNavigationLocked) {
+        event.stopPropagation();
+        event.preventDefault();
+        panStartX = event.touches[0].clientX;
+        panStartY = event.touches[0].clientY;
+        panOriginX = panX;
+        panOriginY = panY;
+        didPan = false;
+      } else if (window.flipbookNavigationLocked) {
+        event.stopPropagation();
       }
-    }, { passive: true });
+    }, { capture: true, passive: true });
 
     document.addEventListener('touchmove', function (event) {
       if (event.touches.length === 2) {
+        window.flipbookZooming = true;
+        event.stopPropagation();
         event.preventDefault();
         const newDistance = distanceBetween(event.touches);
         const rawScale = initialScale * (newDistance / initialDistance);
         currentScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, rawScale));
-        zoomWrapper.style.transform = 'scale(' + currentScale + ')';
+        applyZoomResolution();
+        constrainPan();
+        applyTransform();
+      } else if (event.touches.length === 1 && window.flipbookNavigationLocked) {
+        event.stopPropagation();
+        event.preventDefault();
+        panX = panOriginX + event.touches[0].clientX - panStartX;
+        panY = panOriginY + event.touches[0].clientY - panStartY;
+        didPan = didPan ||
+          Math.abs(event.touches[0].clientX - panStartX) > 5 ||
+          Math.abs(event.touches[0].clientY - panStartY) > 5;
+        constrainPan();
+        applyTransform();
       }
-    }, { passive: false });
+    }, { capture: true, passive: false });
 
     let lastTap = 0;
     document.addEventListener('touchend', function (event) {
       if (event.touches.length === 0) {
         const now = Date.now();
-        if (now - lastTap < 300 && currentScale > 1) {
+        if (!didPan && now - lastTap < 300 && currentScale > 1) {
           currentScale = 1;
-          zoomWrapper.style.transform = 'scale(1)';
+          panX = 0;
+          panY = 0;
+          applyZoomResolution();
+          applyTransform();
         }
         lastTap = now;
+        didPan = false;
+        setTimeout(function () {
+          window.flipbookZooming = false;
+        }, 0);
       }
-    });
+    }, { capture: true });
   </script>
 </body>
 </html>

@@ -729,6 +729,7 @@
         this.do(this.render.convertToPage(t)));
     }
     flip(t) {
+      if ("flipping" === this.state) return;
       if (
         this.app.getSettings().disableFlipByClick &&
         !this.isPointOnCorners(t)
@@ -1230,8 +1231,7 @@
         this.ctx.restore());
     }
     clear() {
-      ((this.ctx.fillStyle = "white"),
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height));
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
   }
   class p {
@@ -1242,31 +1242,56 @@
           this.update();
         }),
         (this.onMouseDown = (t) => {
+          if ("flipping" === this.app.getState()) return;
           if (this.checkTarget(t.target)) {
             const e = this.getMousePos(t.clientX, t.clientY);
             (this.app.startUserTouch(e), t.preventDefault());
           }
         }),
         (this.onTouchStart = (t) => {
+          if (
+            window.flipbookZooming ||
+            window.flipbookNavigationLocked ||
+            "flipping" === this.app.getState()
+          ) {
+            this.touchPoint = null;
+            return;
+          }
           if (this.checkTarget(t.target) && t.changedTouches.length > 0) {
             const e = t.changedTouches[0],
               i = this.getMousePos(e.clientX, e.clientY);
             ((this.touchPoint = { point: i, time: Date.now() }),
               setTimeout(() => {
-                null !== this.touchPoint && this.app.startUserTouch(i);
+                !window.flipbookNavigationLocked &&
+                  "flipping" !== this.app.getState() &&
+                  null !== this.touchPoint &&
+                  this.app.startUserTouch(i);
               }, this.swipeTimeout),
               this.app.getSettings().mobileScrollSupport || t.preventDefault());
           }
         }),
         (this.onMouseUp = (t) => {
+          if ("flipping" === this.app.getState()) {
+            this.touchPoint = null;
+            return;
+          }
           const e = this.getMousePos(t.clientX, t.clientY);
           this.app.userStop(e);
         }),
         (this.onMouseMove = (t) => {
+          if ("flipping" === this.app.getState()) return;
           const e = this.getMousePos(t.clientX, t.clientY);
           this.app.userMove(e, !1);
         }),
         (this.onTouchMove = (t) => {
+          if (
+            window.flipbookZooming ||
+            window.flipbookNavigationLocked ||
+            "flipping" === this.app.getState()
+          ) {
+            this.touchPoint = null;
+            return;
+          }
           if (t.changedTouches.length > 0) {
             const e = t.changedTouches[0],
               i = this.getMousePos(e.clientX, e.clientY);
@@ -1281,6 +1306,14 @@
           }
         }),
         (this.onTouchEnd = (t) => {
+          if (
+            window.flipbookZooming ||
+            window.flipbookNavigationLocked ||
+            "flipping" === this.app.getState()
+          ) {
+            this.touchPoint = null;
+            return;
+          }
           if (t.changedTouches.length > 0) {
             const e = t.changedTouches[0],
               i = this.getMousePos(e.clientX, e.clientY);
@@ -1426,7 +1459,10 @@
       const t = getComputedStyle(this.canvas),
         e = parseInt(t.getPropertyValue("width"), 10),
         i = parseInt(t.getPropertyValue("height"), 10);
-      const ratio = window.devicePixelRatio || 1;
+      // Render above the CSS resolution so pages stay sharp on displays whose
+      // WebView reports a low devicePixelRatio.
+      const zoomScale = Number(window.flipbookZoomScale) || 1;
+      const ratio = Math.min(6, Math.max(2, (window.devicePixelRatio || 1) * zoomScale));
       this.canvas.width = e * ratio;
       this.canvas.height = i * ratio;
       const ctx = this.canvas.getContext("2d");

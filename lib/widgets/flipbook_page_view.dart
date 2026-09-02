@@ -207,5 +207,10 @@ class _WindowsFlipbookViewState extends State<_WindowsFlipbookView> {
 Future<String> _buildFlipbookHtml(List<String> pageImageUrls) async {
   final template = await rootBundle.loadString('assets/flipbook_viewer/index.html');
   final pagesJson = jsonEncode(pageImageUrls);
-  return template.replaceFirst('%%PAGES_JSON%%', pagesJson);
+  final pageFlipCss = await rootBundle.loadString('assets/flipbook_viewer/lib/page-flip.css');
+  final pageFlipJs = await rootBundle.loadString('assets/flipbook_viewer/page-flip.browser.js');
+  return template
+      .replaceFirst('%%PAGE_FLIP_CSS%%', pageFlipCss)
+      .replaceFirst('%%PAGE_FLIP_JS%%', pageFlipJs)
+      .replaceFirst('%%PAGES_JSON%%', pagesJson);
 }

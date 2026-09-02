@@ -49,7 +49,9 @@ class OfflineService {
     await libDir.create(recursive: true);
 
     // 1. Copie la bibliothèque du lecteur depuis les assets de l'app
-    final jsBytes = await rootBundle.load('assets/flipbook_viewer/lib/page-flip.browser.js');
+    // Utilise le bundle optimisé du lecteur, qui dimensionne le canvas en
+    // haute résolution sur les WebView hors-ligne également.
+    final jsBytes = await rootBundle.load('assets/flipbook_viewer/page-flip.browser.js');
     await File('${libDir.path}/page-flip.browser.js')
         .writeAsBytes(jsBytes.buffer.asUint8List());
     final cssBytes = await rootBundle.load('assets/flipbook_viewer/lib/page-flip.css');

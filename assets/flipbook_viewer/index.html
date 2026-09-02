@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=4.0, user-scalable=yes" />
+  <title>Lecteur de flipbook</title>
+
+  <!-- StPageFlip : librairie qui reproduit l'effet de page qui se courbe -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip/dist/css/page-flip.css" />
+  <script src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.js"></script>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      touch-action: none; /* on gère nous-mêmes le pincement, voir le script */
+    }
+    #zoom-wrapper {
+      width: 100%;
+      height: 100%;
+      transform-origin: center center;
+    }
+    #book {
+      margin: 0 auto;
+    }
+    /* Les images de page s'affichent ENTIÈRES, sans être rognées — même si
+       leurs proportions ne correspondent pas exactement au cadre de la
+       page (ex: PDF avec des marges différentes). Sans ça, StPageFlip
+       recadrait les pages par défaut, coupant du texte en bas. */
+    .stf__item img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #ffffff;
+    }
+    /* Petit indicateur affiché tant qu'aucune page n'est chargée */
+    #placeholder {
+      color: #888;
+      font-family: sans-serif;
+      text-align: center;
+      padding-top: 40vh;
+    }
+  </style>
+</head>
+<body>
+  <div id="placeholder">Chargement du flipbook...</div>
+  <div id="zoom-wrapper">
+    <div id="book" class="stf__parent" style="display:none;"></div>
+  </div>
+
+  <script>
+    // La liste des URLs de pages est injectée directement ici par Flutter
+    // (remplacement de texte), pour éviter toute dépendance à runJavaScript
+    // ou setJavaScriptMode, qui ne sont pas supportés de façon fiable sur
+    // toutes les plateformes (notamment Flutter Web).
+    const pageUrls = %%PAGES_JSON%%;
+
+    document.getElementById('placeholder').style.display = 'none';
+    const bookEl = document.getElementById('book');
+    bookEl.style.display = 'block';
+
+    const pageFlip = new St.PageFlip(bookEl, {
+      // Dimensions internes plus élevées que la taille d'affichage réelle :
+      // c'est ce qui donne des pages nettes sur écrans haute densité
+      // (Retina...), même en mode Canvas — pas besoin du mode HTML pour ça.
+      width: 800,
+      height: 1131,
+      size: 'stretch',
+      minWidth: 400,
+      maxWidth: 2400,
+      minHeight: 565,
+      maxHeight: 3393,
+      showCover: false,
+      maxShadowOpacity: 0.5,
+      mobileScrollSupport: false,
+      usePortrait: true, // passe automatiquement en page unique sur petit écran
+      clickEventForward: true,
+    });
+
+    // loadFromImages (mode Canvas) plutôt que loadFromHTML (mode CSS 3D) :
+    // c'est ce mode qui produit le véritable effet de page qui se courbe
+    // façon livre, avec une animation fluide. Le mode HTML donne un flip
+    // plat et plus brusque — la netteté, elle, vient des dimensions
+    // internes ci-dessus, pas du mode de rendu.
+    pageFlip.loadFromImages(pageUrls);
+
+    // ---------- Zones de clic : tape à droite = page suivante, à gauche = page précédente ----------
+    // (en plus du glissement classique, qui continue de fonctionner normalement)
+    bookEl.addEventListener('click', function (event) {
+      const rect = bookEl.getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      if (clickX > rect.width / 2) {
+        pageFlip.flipNext();
+      } else {
+        pageFlip.flipPrev();
+      }
+    });
+
+    // ---------- Pincement à deux doigts pour zoomer ----------
+    // Géré ici en JavaScript pur plutôt que côté Flutter, car StPageFlip
+    // capture déjà les gestes tactiles à un doigt pour le glissement de
+    // page — un zoom géré côté Flutter (InteractiveViewer) entre en
+    // conflit avec ça. En le faisant ici, les deux gestes cohabitent bien :
+    // un doigt = tourne la page (StPageFlip), deux doigts = zoome (ici).
+    const zoomWrapper = document.getElementById('zoom-wrapper');
+    let currentScale = 1;
+    let initialDistance = 0;
+    let initialScale = 1;
+    const MIN_SCALE = 1;
+    const MAX_SCALE = 3;
+
+    function distanceBetween(touches) {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    document.addEventListener('touchstart', function (event) {
+      if (event.touches.length === 2) {
+        initialDistance = distanceBetween(event.touches);
+        initialScale = currentScale;
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function (event) {
+      if (event.touches.length === 2) {
+        event.preventDefault();
+        const newDistance = distanceBetween(event.touches);
+        const rawScale = initialScale * (newDistance / initialDistance);
+        currentScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, rawScale));
+        zoomWrapper.style.transform = 'scale(' + currentScale + ')';
+      }
+    }, { passive: false });
+
+    // Double-tap pour dézoomer rapidement (pratique après un zoom)
+    let lastTap = 0;
+    document.addEventListener('touchend', function (event) {
+      if (event.touches.length === 0) {
+        const now = Date.now();
+        if (now - lastTap < 300 && currentScale > 1) {
+          currentScale = 1;
+          zoomWrapper.style.transform = 'scale(1)';
+        }
+        lastTap = now;
+      }
+    });
+  </script>
+</body>
+</html>

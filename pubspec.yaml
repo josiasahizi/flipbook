@@ -1,0 +1,63 @@
+name: flipbook_app
+description: Application de création et lecture de flipbooks numériques interactifs
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Supabase (auth, storage, base de données)
+  supabase_flutter: ^2.5.0
+
+  # Sélection de fichiers (PDF/Word/PPT/images) depuis l'appareil
+  file_picker: ^8.0.0
+
+  # Appels HTTP vers le backend de conversion
+  http: ^1.2.1
+
+  # WebView pour afficher le lecteur de flipbook (effet StPageFlip),
+  # avec un rendu identique sur Android, iOS et Web
+  webview_flutter: ^4.8.0
+  webview_flutter_web: ^0.2.3+4
+
+  # Support WebView spécifique à Windows (webview_flutter ne le supporte
+  # pas nativement) — utilise Microsoft Edge WebView2 en coulisses
+  webview_win_floating: ^3.0.0
+
+  # Ouvrir/télécharger le PDF associé à un flipbook
+  url_launcher: ^6.3.0
+
+  # Typographie soignée pour le thème visuel de l'app
+  google_fonts: ^6.2.1
+
+  # Stockage local pour le mode hors-ligne (téléchargement des flipbooks)
+  path_provider: ^2.1.4
+
+  # Mémorise si l'utilisateur a déjà vu le petit tuto du lecteur
+  shared_preferences: ^2.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_native_splash: ^2.4.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/flipbook_viewer/
+    - assets/flipbook_viewer/lib/
+    - assets/splash/logo_full.png
+
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/splash/logo_full.png
+  android_12:
+    color: "#FFFFFF"
+    image: assets/splash/logo_full.png
+  web: false

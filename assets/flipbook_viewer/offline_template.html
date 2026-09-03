@@ -27,6 +27,7 @@
       align-items: center;
       justify-content: center;
       overflow: hidden;
+      position: relative;
       transform-origin: center center;
     }
     #book {
@@ -48,6 +49,44 @@
       height: 100%;
       object-fit: contain;
       background: #ffffff;
+    }
+    #zoom-overlay {
+      position: absolute;
+      display: none;
+      z-index: 25;
+      overflow: hidden;
+      pointer-events: none;
+      background: #ffffff;
+    }
+    #zoom-overlay.visible {
+      display: flex;
+    }
+    #zoom-overlay img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      flex: 1 1 0;
+    }
+    /* Reliure centrale de la couche nette affichée pendant le zoom. */
+    #zoom-overlay.has-spread::after {
+      content: '';
+      position: absolute;
+      z-index: 30;
+      top: 0;
+      left: 50%;
+      width: 56px;
+      height: 100%;
+      transform: translateX(-50%);
+      pointer-events: none;
+      background: linear-gradient(
+        to right,
+        rgba(0, 0, 0, 0),
+        rgba(0, 0, 0, 0.16) 42%,
+        rgba(0, 0, 0, 0.26) 50%,
+        rgba(255, 255, 255, 0.16) 58%,
+        rgba(0, 0, 0, 0)
+      );
     }
     #placeholder {
       color: #888;
@@ -72,13 +111,16 @@
     document.getElementById('placeholder').style.display = 'none';
     const bookEl = document.getElementById('book');
     bookEl.style.display = 'block';
+    if (pageUrls.length > 1) bookEl.classList.add('has-spread');
 
     const pageFlip = new St.PageFlip(bookEl, {
       // Dimensions internes plus élevées que la taille d'affichage réelle :
       // c'est ce qui donne des pages nettes sur écrans haute densité
       // (Retina...), même en mode Canvas — pas besoin du mode HTML pour ça.
-      width: 1200,
-      height: 1697,
+      // Résolution interne élevée pour conserver une image nette pendant
+      // le zoom. Le canvas est ensuite réduit à la taille de l'écran.
+      width: 2400,
+      height: 3394,
       size: 'stretch',
       // Permet au moteur de s'adapter aux écrans étroits sans débordement.
       minWidth: 1,
@@ -88,7 +130,7 @@
       showCover: false,
       maxShadowOpacity: 0.5,
       // Animation plus lente pour éviter l'effet de changement brusque.
-      flippingTime: 1200,
+      flippingTime: 900,
       mobileScrollSupport: false,
       usePortrait: true,
       clickEventForward: true,
@@ -96,6 +138,9 @@
 
     // loadFromImages (mode Canvas) : effet de page qui se courbe façon
     // livre, avec une animation fluide (voir index.html pour le détail).
+    // Le Canvas est conservé à taille normale pour garder l'animation
+    // incurvée de PageFlip. Une couche HTML nette est utilisée uniquement
+    // pendant le zoom (voir showZoomOverlay()).
     pageFlip.loadFromImages(pageUrls);
 
     let currentScale = 1;
@@ -160,6 +205,44 @@
 
     // ---------- Pincement à deux doigts pour zoomer ----------
     const zoomWrapper = document.getElementById('zoom-wrapper');
+    const zoomOverlay = document.createElement('div');
+    zoomOverlay.id = 'zoom-overlay';
+    zoomWrapper.appendChild(zoomOverlay);
+    let zoomOverlayVisible = false;
+
+    function updateZoomOverlay() {
+      const page = pageFlip.getCurrentPageIndex();
+      const landscape = pageFlip.getOrientation() === 'landscape';
+      const urls = landscape ? pageUrls.slice(page, page + 2) : pageUrls.slice(page, page + 1);
+      zoomOverlay.innerHTML = '';
+      urls.forEach((url) => {
+        const image = document.createElement('img');
+        image.src = url;
+        image.alt = '';
+        zoomOverlay.appendChild(image);
+      });
+      zoomOverlay.classList.toggle('has-spread', urls.length > 1);
+      const bookRect = bookEl.getBoundingClientRect();
+      const wrapperRect = zoomWrapper.getBoundingClientRect();
+      zoomOverlay.style.left = (bookRect.left - wrapperRect.left) + 'px';
+      zoomOverlay.style.top = (bookRect.top - wrapperRect.top) + 'px';
+      zoomOverlay.style.width = bookRect.width + 'px';
+      zoomOverlay.style.height = bookRect.height + 'px';
+    }
+
+    function showZoomOverlay() {
+      if (!zoomOverlayVisible) {
+        updateZoomOverlay();
+        zoomOverlay.classList.add('visible');
+        zoomOverlayVisible = true;
+      }
+    }
+
+    function hideZoomOverlay() {
+      zoomOverlay.classList.remove('visible');
+      zoomOverlayVisible = false;
+    }
+    pageFlip.on('flip', updateZoomOverlay);
     let initialDistance = 0;
     let initialScale = 1;
     const MIN_SCALE = 1;
@@ -175,6 +258,7 @@
       if (event.touches.length === 2) {
         window.flipbookZooming = true;
         event.stopPropagation();
+        showZoomOverlay();
         initialDistance = distanceBetween(event.touches);
         initialScale = currentScale;
       } else if (event.touches.length === 1 && window.flipbookNavigationLocked) {
@@ -222,6 +306,7 @@
           currentScale = 1;
           panX = 0;
           panY = 0;
+          hideZoomOverlay();
           applyZoomResolution();
           applyTransform();
         }

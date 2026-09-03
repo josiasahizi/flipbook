@@ -1237,7 +1237,7 @@
   class p {
     constructor(t, e, i) {
       ((this.touchPoint = null),
-        (this.swipeTimeout = 250),
+        (this.swipeTimeout = 80),
         (this.onResize = () => {
           this.update();
         }),

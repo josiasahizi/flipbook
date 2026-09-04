@@ -192,6 +192,7 @@ class SupabaseService {
         .from('bookmarks')
         .insert({
           'flipbook_id': flipbookId,
+          'user_id': currentUser!.id,
           'page': page,
           'note': note,
         })
@@ -204,51 +205,5 @@ class SupabaseService {
   /// Supprime un signet par son ID (vérifie implicitement l'appartenance via RLS).
   Future<void> removeBookmark(String bookmarkId) async {
     await _client.from('bookmarks').delete().eq('id', bookmarkId);
-  }
-
-  // ============================================================
-  // RECHERCHE PLEIN TEXTE
-  // ============================================================
-
-  /// Recherche un terme dans le texte des pages d'un flipbook.
-  /// Retourne une liste de résultats (page + extrait/snippet).
-  Future<List<SearchResult>> searchInFlipbook({
-    required String flipbookId,
-    required String query,
-    int limit = 20,
-  }) async {
-    if (query.trim().isEmpty) return [];
-
-    final data = await _client
-        .from('flipbook_page_text')
-        .select('page, text_content')
-        .eq('flipbook_id', flipbookId)
-        .textSearch('text_content', query.trim(), config: 'french')
-        .limit(limit);
-
-    return (data as List).map((row) {
-      final text = row['text_content'] as String? ?? '';
-      final page = row['page'] as int;
-      final snippet = _buildSnippet(text, query);
-      return SearchResult(page: page, snippet: snippet);
-    }).toList();
-  }
-
-  /// Construit un extrait (snippet) autour du terme recherché.
-  String _buildSnippet(String text, String query) {
-    const maxLen = 160;
-    if (text.length <= maxLen) return text;
-
-    final lowerText = text.toLowerCase();
-    final lowerQuery = query.toLowerCase();
-    final idx = lowerText.indexOf(lowerQuery);
-    if (idx < 0) return text.substring(0, maxLen) + '…';
-
-    int start = (idx - maxLen ~/ 2).clamp(0, text.length - maxLen);
-    int end = (start + maxLen).clamp(0, text.length);
-    String snippet = text.substring(start, end);
-    if (start > 0) snippet = '…$snippet';
-    if (end < text.length) snippet = '$snippet…';
-    return snippet;
   }
 }

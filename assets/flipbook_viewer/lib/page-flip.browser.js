@@ -836,7 +836,11 @@
     }
     flipPrev(t) {
       this.flip({
-        x: 10,
+        // Comme flipNext, il faut décaler le point du bord de rect.left :
+        // en paysage le livre est recentré horizontalement (rect.left != 0),
+        // sinon le point synthétique tombe hors de la zone "coin de page"
+        // exigée par disableFlipByClick et flipPrev() ne fait rien.
+        x: this.render.getRect().left + 10,
         y: "top" === t ? 1 : this.render.getRect().height - 2,
       });
     }
@@ -1237,7 +1241,9 @@
   class p {
     constructor(t, e, i) {
       ((this.touchPoint = null),
-        (this.swipeTimeout = 80),
+        // Android envoie souvent un glissement sur plus de 80 ms ; une
+        // fenêtre trop courte rend le changement de page intermittent.
+        (this.swipeTimeout = 500),
         (this.onResize = () => {
           this.update();
         }),
@@ -1249,6 +1255,11 @@
           }
         }),
         (this.onTouchStart = (t) => {
+          // Un minuteur laissé par un toucher précédent (jamais annulé)
+          // peut sinon se déclencher en plein milieu du geste suivant
+          // (ex: le 2e tap d'un double-tap) et corrompre l'état de la
+          // page en cours — d'où le nettoyage systématique ici.
+          clearTimeout(this.touchTimer);
           if (
             window.flipbookZooming ||
             window.flipbookNavigationLocked ||
@@ -1261,12 +1272,12 @@
             const e = t.changedTouches[0],
               i = this.getMousePos(e.clientX, e.clientY);
             ((this.touchPoint = { point: i, time: Date.now() }),
-              setTimeout(() => {
+              (this.touchTimer = setTimeout(() => {
                 !window.flipbookNavigationLocked &&
                   "flipping" !== this.app.getState() &&
                   null !== this.touchPoint &&
                   this.app.startUserTouch(i);
-              }, this.swipeTimeout),
+              }, this.swipeTimeout)),
               this.app.getSettings().mobileScrollSupport || t.preventDefault());
           }
         }),
@@ -1289,6 +1300,7 @@
             window.flipbookNavigationLocked ||
             "flipping" === this.app.getState()
           ) {
+            clearTimeout(this.touchTimer);
             this.touchPoint = null;
             return;
           }
@@ -1311,6 +1323,7 @@
             window.flipbookNavigationLocked ||
             "flipping" === this.app.getState()
           ) {
+            clearTimeout(this.touchTimer);
             this.touchPoint = null;
             return;
           }
@@ -1338,6 +1351,7 @@
                         : "bottom",
                     ),
                 (s = !0)),
+                clearTimeout(this.touchTimer),
                 (this.touchPoint = null));
             }
             this.app.userStop(i, s);
@@ -1912,7 +1926,9 @@
         e ||
           (this.isUserMove
             ? this.flipController.stopMove()
-            : this.flipController.flip(t)));
+            : this.app.getSettings().disableFlipByClick
+              ? this.flipController.reset()
+              : this.flipController.flip(t)));
     }
   }),
     Object.defineProperty(t, "__esModule", { value: !0 }));

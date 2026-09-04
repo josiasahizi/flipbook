@@ -21,10 +21,15 @@ class ToolResult {
 /// Appelle les différents outils de conversion indépendants du flipbook
 /// (Word↔PDF, texte→PDF, image→PDF, fusion, division, compression...).
 class ToolsService {
-  Future<ToolResult> _postSingleFile(String endpoint, PickedFileData file) async {
+  Future<ToolResult> _postSingleFile(
+    String endpoint,
+    PickedFileData file, {
+    Map<String, String>? fields,
+  }) async {
     final uri = Uri.parse('$backendBaseUrl$endpoint');
     final request = http.MultipartRequest('POST', uri)
       ..files.add(http.MultipartFile.fromBytes('file', file.bytes, filename: file.fileName));
+    if (fields != null) request.fields.addAll(fields);
     return _sendAndParse(request);
   }
 
@@ -49,8 +54,16 @@ class ToolsService {
   Future<ToolResult> pdfToWord(PickedFileData file) => _postSingleFile('/tools/pdf-to-word', file);
   Future<ToolResult> textToPdf(PickedFileData file) => _postSingleFile('/tools/text-to-pdf', file);
   Future<ToolResult> imageToPdf(PickedFileData file) => _postSingleFile('/tools/image-to-pdf', file);
+  Future<ToolResult> convertImage(PickedFileData file, String targetFormat) =>
+      _postSingleFile('/tools/convert-image', file, fields: {'format': targetFormat});
   Future<ToolResult> compressPdf(PickedFileData file) => _postSingleFile('/tools/compress-pdf', file);
   Future<ToolResult> splitPdf(PickedFileData file) => _postSingleFile('/tools/split-pdf', file);
+  Future<ToolResult> pdfToImages(PickedFileData file, String format) =>
+      _postSingleFile('/tools/pdf-to-images', file, fields: {'format': format});
+  Future<ToolResult> watermarkPdf(PickedFileData file, String text) =>
+      _postSingleFile('/tools/watermark-pdf', file, fields: {'text': text});
+  Future<ToolResult> protectPdf(PickedFileData file, String password) =>
+      _postSingleFile('/tools/protect-pdf', file, fields: {'text': password});
 
   Future<ToolResult> imagesToPdf(List<PickedFileData> files) =>
       _postMultipleFiles('/tools/images-to-pdf', files, 'files');

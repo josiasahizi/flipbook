@@ -22,6 +22,21 @@ class _ToolRunnerScreenState extends State<ToolRunnerScreen> {
   bool _isProcessing = false;
   ToolResult? _result;
   String? _errorMessage;
+  String? _selectedFormat;
+  final _textController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedFormat = widget.tool.formatOptions?.first;
+    _textController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickFiles() async {
     final result = await FilePicker.platform.pickFiles(
@@ -50,6 +65,10 @@ class _ToolRunnerScreenState extends State<ToolRunnerScreen> {
     if (widget.tool.allowMultiple && widget.tool.title.contains('Regrouper')) {
       return _pickedFiles.length >= 2; // fusionner nécessite au moins 2 PDF
     }
+    if (widget.tool.textInputLabel != null &&
+        _textController.text.trim().length < widget.tool.minTextInputLength) {
+      return false;
+    }
     return true;
   }
 
@@ -64,7 +83,11 @@ class _ToolRunnerScreenState extends State<ToolRunnerScreen> {
       final files = _pickedFiles
           .map((f) => PickedFileData(fileName: f.name, bytes: f.bytes!))
           .toList();
-      final result = await widget.tool.run(files);
+      final result = await widget.tool.run(
+        files,
+        format: _selectedFormat,
+        text: widget.tool.textInputLabel != null ? _textController.text.trim() : null,
+      );
       setState(() => _result = result);
     } catch (e) {
       setState(() => _errorMessage = e.toString());
@@ -127,6 +150,33 @@ class _ToolRunnerScreenState extends State<ToolRunnerScreen> {
                   ),
                 );
               }),
+            ],
+            if (tool.formatOptions != null) ...[
+              const SizedBox(height: 20),
+              _sectionLabel('FORMAT CIBLE'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: tool.formatOptions!.map((format) {
+                  final selected = format == _selectedFormat;
+                  return ChoiceChip(
+                    label: Text(format.toUpperCase()),
+                    selected: selected,
+                    onSelected: (_) => setState(() => _selectedFormat = format),
+                  );
+                }).toList(),
+              ),
+            ],
+            if (tool.textInputLabel != null) ...[
+              const SizedBox(height: 20),
+              _sectionLabel(tool.textInputLabel!.toUpperCase()),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _textController,
+                obscureText: tool.obscureTextInput,
+                decoration: InputDecoration(hintText: tool.textInputHint),
+              ),
             ],
             const SizedBox(height: 24),
             FilledButton(

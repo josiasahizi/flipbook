@@ -12,7 +12,16 @@ class ToolDefinition {
   final Color color;
   final List<String> allowedExtensions;
   final bool allowMultiple;
-  final Future<ToolResult> Function(List<PickedFileData> files) run;
+  // Non-null si l'outil demande de choisir un format cible avant de lancer
+  // la conversion (ex: convertisseur d'image) — voir ToolRunnerScreen.
+  final List<String>? formatOptions;
+  // Non-null si l'outil demande un texte libre avant de lancer la
+  // conversion (ex: texte du filigrane, mot de passe) — voir ToolRunnerScreen.
+  final String? textInputLabel;
+  final String? textInputHint;
+  final bool obscureTextInput;
+  final int minTextInputLength;
+  final Future<ToolResult> Function(List<PickedFileData> files, {String? format, String? text}) run;
 
   ToolDefinition({
     required this.title,
@@ -22,6 +31,11 @@ class ToolDefinition {
     required this.allowedExtensions,
     required this.run,
     this.allowMultiple = false,
+    this.formatOptions,
+    this.textInputLabel,
+    this.textInputHint,
+    this.obscureTextInput = false,
+    this.minTextInputLength = 1,
   });
 }
 
@@ -40,7 +54,7 @@ class ToolsScreen extends StatelessWidget {
         icon: Icons.description,
         color: const Color(0xFF3B82F6),
         allowedExtensions: ['doc', 'docx'],
-        run: (files) => service.wordToPdf(files.first),
+        run: (files, {format, text}) => service.wordToPdf(files.first),
       ),
       ToolDefinition(
         title: 'PDF en Word',
@@ -48,7 +62,7 @@ class ToolsScreen extends StatelessWidget {
         icon: Icons.picture_as_pdf,
         color: const Color(0xFFE1445E),
         allowedExtensions: ['pdf'],
-        run: (files) => service.pdfToWord(files.first),
+        run: (files, {format, text}) => service.pdfToWord(files.first),
       ),
       ToolDefinition(
         title: 'Texte en PDF',
@@ -56,7 +70,7 @@ class ToolsScreen extends StatelessWidget {
         icon: Icons.notes,
         color: const Color(0xFF9B5DE5),
         allowedExtensions: ['txt'],
-        run: (files) => service.textToPdf(files.first),
+        run: (files, {format, text}) => service.textToPdf(files.first),
       ),
       ToolDefinition(
         title: 'Image en PDF',
@@ -64,7 +78,7 @@ class ToolsScreen extends StatelessWidget {
         icon: Icons.image,
         color: const Color(0xFF2CB67D),
         allowedExtensions: ['jpg', 'jpeg', 'png'],
-        run: (files) => service.imageToPdf(files.first),
+        run: (files, {format, text}) => service.imageToPdf(files.first),
       ),
       ToolDefinition(
         title: 'Plusieurs images en PDF',
@@ -73,7 +87,47 @@ class ToolsScreen extends StatelessWidget {
         color: const Color(0xFF14B8A6),
         allowedExtensions: ['jpg', 'jpeg', 'png'],
         allowMultiple: true,
-        run: (files) => service.imagesToPdf(files),
+        run: (files, {format, text}) => service.imagesToPdf(files),
+      ),
+      ToolDefinition(
+        title: 'Convertir une image',
+        subtitle: 'Changez le format de votre image (JPG, PNG, WEBP)',
+        icon: Icons.photo_size_select_actual_outlined,
+        color: const Color(0xFFF97316),
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+        formatOptions: const ['jpg', 'png', 'webp'],
+        run: (files, {format, text}) => service.convertImage(files.first, format ?? 'png'),
+      ),
+      ToolDefinition(
+        title: 'PDF en image(s)',
+        subtitle: 'Extrait chaque page en JPG ou PNG (.zip si plusieurs pages)',
+        icon: Icons.image_outlined,
+        color: const Color(0xFF06B6D4),
+        allowedExtensions: ['pdf'],
+        formatOptions: const ['jpg', 'png'],
+        run: (files, {format, text}) => service.pdfToImages(files.first, format ?? 'jpg'),
+      ),
+      ToolDefinition(
+        title: 'Filigrane PDF',
+        subtitle: 'Ajoute un texte en filigrane sur toutes les pages',
+        icon: Icons.branding_watermark_outlined,
+        color: const Color(0xFF8B5CF6),
+        allowedExtensions: ['pdf'],
+        textInputLabel: 'Texte du filigrane',
+        textInputHint: 'Ex : CONFIDENTIEL',
+        run: (files, {format, text}) => service.watermarkPdf(files.first, text ?? ''),
+      ),
+      ToolDefinition(
+        title: 'Protéger un PDF',
+        subtitle: 'Ajoute un mot de passe pour ouvrir le fichier',
+        icon: Icons.lock_outline,
+        color: const Color(0xFF0EA5E9),
+        allowedExtensions: ['pdf'],
+        textInputLabel: 'Mot de passe',
+        textInputHint: 'Au moins 4 caractères',
+        obscureTextInput: true,
+        minTextInputLength: 4,
+        run: (files, {format, text}) => service.protectPdf(files.first, text ?? ''),
       ),
       ToolDefinition(
         title: 'Regrouper des PDF',
@@ -82,7 +136,7 @@ class ToolsScreen extends StatelessWidget {
         color: const Color(0xFFF59E0B),
         allowedExtensions: ['pdf'],
         allowMultiple: true,
-        run: (files) => service.mergePdf(files),
+        run: (files, {format, text}) => service.mergePdf(files),
       ),
       ToolDefinition(
         title: 'Diviser un PDF',
@@ -90,7 +144,7 @@ class ToolsScreen extends StatelessWidget {
         icon: Icons.call_split,
         color: const Color(0xFFEF4444),
         allowedExtensions: ['pdf'],
-        run: (files) => service.splitPdf(files.first),
+        run: (files, {format, text}) => service.splitPdf(files.first),
       ),
       ToolDefinition(
         title: 'Compresser un PDF',
@@ -98,7 +152,7 @@ class ToolsScreen extends StatelessWidget {
         icon: Icons.compress,
         color: const Color(0xFF64748B),
         allowedExtensions: ['pdf'],
-        run: (files) => service.compressPdf(files.first),
+        run: (files, {format, text}) => service.compressPdf(files.first),
       ),
     ];
   }

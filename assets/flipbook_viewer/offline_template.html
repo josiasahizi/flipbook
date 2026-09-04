@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=4.0, user-scalable=yes" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Lecteur de flipbook (hors-ligne)</title>
 
   <!-- StPageFlip chargé en LOCAL (pas de CDN) — c'est ce qui permet au
@@ -134,6 +134,9 @@
       mobileScrollSupport: false,
       usePortrait: true,
       clickEventForward: true,
+      // Le changement de page se fera par glissement ou double-clic,
+      // jamais par un clic simple.
+      disableFlipByClick: true,
     });
 
     // loadFromImages (mode Canvas) : effet de page qui se courbe façon
@@ -143,6 +146,31 @@
     // pendant le zoom (voir showZoomOverlay()).
     pageFlip.loadFromImages(pageUrls);
 
+    // ---------- Pont avec Flutter (signets, miniatures) ----------
+    // Voir index.html pour le détail : Flutter appelle ces fonctions via
+    // runJavaScript() et écoute FlipbookChannel pour être notifié à chaque
+    // changement de page.
+    window.flipbookGetCurrentPage = function () {
+      return pageFlip.getCurrentPageIndex() + 1; // 1-based côté Flutter
+    };
+
+    window.flipbookGoToPage = function (page) {
+      const index = Math.max(0, Math.min(pageFlip.getPageCount() - 1, page - 1));
+      pageFlip.flip(index);
+    };
+
+    function notifyFlutterPageChanged() {
+      if (window.FlipbookChannel && window.FlipbookChannel.postMessage) {
+        window.FlipbookChannel.postMessage(JSON.stringify({
+          type: 'pageChanged',
+          page: pageFlip.getCurrentPageIndex() + 1,
+          total: pageFlip.getPageCount(),
+        }));
+      }
+    }
+    pageFlip.on('flip', notifyFlutterPageChanged);
+    notifyFlutterPageChanged();
+
     let currentScale = 1;
     let panX = 0;
     let panY = 0;
@@ -151,6 +179,11 @@
     let panOriginX = 0;
     let panOriginY = 0;
     let didPan = false;
+    let tapStartX = 0;
+    let tapStartY = 0;
+    let tapMoved = false;
+    let lastPageTapTime = 0;
+    let lastPageTapSide = null; // 'left' | 'right' | null
     window.flipbookZoomScale = currentScale;
 
     function applyZoomResolution() {
@@ -222,12 +255,18 @@
         zoomOverlay.appendChild(image);
       });
       zoomOverlay.classList.toggle('has-spread', urls.length > 1);
-      const bookRect = bookEl.getBoundingClientRect();
-      const wrapperRect = zoomWrapper.getBoundingClientRect();
-      zoomOverlay.style.left = (bookRect.left - wrapperRect.left) + 'px';
-      zoomOverlay.style.top = (bookRect.top - wrapperRect.top) + 'px';
-      zoomOverlay.style.width = bookRect.width + 'px';
-      zoomOverlay.style.height = bookRect.height + 'px';
+      // On utilise les dimensions de mise en page (offsetLeft/Width...),
+      // insensibles au transform CSS scale/translate du parent, plutôt que
+      // getBoundingClientRect() — sinon, si cette fonction est appelée
+      // pendant qu'un zoom est déjà actif (ex: un second pincement sans
+      // avoir dézoomé entre-temps), on récupère des coordonnées déjà mises
+      // à l'échelle, puis le transform du parent s'applique une seconde
+      // fois par-dessus : la couche blanche explose et recouvre tout
+      // l'écran, faisant disparaître le fond noir.
+      zoomOverlay.style.left = bookEl.offsetLeft + 'px';
+      zoomOverlay.style.top = bookEl.offsetTop + 'px';
+      zoomOverlay.style.width = bookEl.offsetWidth + 'px';
+      zoomOverlay.style.height = bookEl.offsetHeight + 'px';
     }
 
     function showZoomOverlay() {
@@ -269,6 +308,13 @@
         panOriginX = panX;
         panOriginY = panY;
         didPan = false;
+      } else if (event.touches.length === 1 && currentScale === 1) {
+        // Un doigt, pas de zoom en cours : on trace juste le point de
+        // départ pour distinguer un tap (double-tap = tourner la page)
+        // d'un glissement (laissé à StPageFlip, qui gère déjà le swipe).
+        tapStartX = event.touches[0].clientX;
+        tapStartY = event.touches[0].clientY;
+        tapMoved = false;
       } else if (window.flipbookNavigationLocked) {
         event.stopPropagation();
       }
@@ -295,23 +341,65 @@
           Math.abs(event.touches[0].clientY - panStartY) > 5;
         constrainPan();
         applyTransform();
+      } else if (event.touches.length === 1 && currentScale === 1) {
+        if (Math.abs(event.touches[0].clientX - tapStartX) > 10 ||
+          Math.abs(event.touches[0].clientY - tapStartY) > 10) {
+          tapMoved = true;
+        }
       }
     }, { capture: true, passive: false });
 
-    let lastTap = 0;
+    // Double-tap : double-tap sur la moitié GAUCHE du livre revient à la
+    // page précédente, double-tap sur la moitié DROITE avance à la page
+    // suivante. Un simple tap ne fait rien (flip par clic désactivé, voir
+    // disableFlipByClick ci-dessus) ; le glissement (swipe) continue lui
+    // aussi de tourner les pages, géré nativement par StPageFlip.
+    //
+    // Note : on ne peut PAS utiliser l'événement `click` ici — StPageFlip
+    // appelle preventDefault() sur touchstart (mobileScrollSupport: false),
+    // ce qui empêche le navigateur de synthétiser un `click` sur mobile.
+    // D'où la détection via `touchend`, regroupée avec celle du zoom.
+    let lastZoomTap = 0;
     document.addEventListener('touchend', function (event) {
       if (event.touches.length === 0) {
         const now = Date.now();
-        if (!didPan && now - lastTap < 300 && currentScale > 1) {
+        if (!didPan && currentScale > 1 && now - lastZoomTap < 300) {
           currentScale = 1;
           panX = 0;
           panY = 0;
           hideZoomOverlay();
           applyZoomResolution();
           applyTransform();
+          lastZoomTap = 0;
+        } else if (!didPan && currentScale > 1) {
+          lastZoomTap = now;
+        } else if (currentScale === 1 && !tapMoved && pageFlip.getState() !== 'flipping') {
+          const touch = event.changedTouches[0];
+          const rect = bookEl.getBoundingClientRect();
+          const insideBook = !!touch &&
+            touch.clientX >= rect.left && touch.clientX <= rect.right &&
+            touch.clientY >= rect.top && touch.clientY <= rect.bottom;
+          if (insideBook) {
+            const side = touch.clientX < rect.left + rect.width / 2 ? 'left' : 'right';
+            if (side === lastPageTapSide && now - lastPageTapTime < 300) {
+              if (side === 'left') {
+                pageFlip.flipPrev('top');
+              } else {
+                pageFlip.flipNext('top');
+              }
+              lastPageTapTime = 0;
+              lastPageTapSide = null;
+            } else {
+              lastPageTapTime = now;
+              lastPageTapSide = side;
+            }
+          }
+          lastZoomTap = 0;
+        } else {
+          lastZoomTap = 0;
         }
-        lastTap = now;
         didPan = false;
+        tapMoved = false;
         setTimeout(function () {
           window.flipbookZooming = false;
         }, 0);

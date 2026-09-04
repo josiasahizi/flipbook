@@ -69,11 +69,3 @@ class Bookmark {
     );
   }
 }
-
-/// Résultat de recherche dans un flipbook.
-class SearchResult {
-  final int page;
-  final String snippet; // Extrait du texte autour du terme trouvé
-
-  SearchResult({required this.page, required this.snippet});
-}
